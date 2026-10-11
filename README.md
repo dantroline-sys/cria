@@ -8,4 +8,8 @@ you want there is also a basic RAG memory recall system that can either be
 keyword based if you are lazy like me, or via an embedding service which just
 means you need another llama.cpp instance serving that tiny model. 
 
+All the data is stored in the browser cache, so if you clear that, it's gone. 
+You can export and import the chats and the RAG in case you want to save 
+your best productions. 
+
 No frills, see if you like it.
