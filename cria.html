@@ -1,0 +1,1277 @@
+<!doctype html>
+<!--
+  Cria - context and RAG management for llama.cpp
+  A single-file web front end for llama-server. No build step, no dependencies.
+
+  Copyright 2026 Daniel Aras
+  SPDX-License-Identifier: Apache-2.0
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  Cria is an independent project. It is not affiliated with or endorsed by the llama.cpp project.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cria</title>
+<style>
+:root{
+  --bg:#ffffff; --fg:#0a0a0a; --muted:#f5f5f5; --muted-fg:#737373; --border:#e5e5e5; --input:#fafafa;
+  --sidebar:#fafafa; --primary:#171717; --primary-fg:#fafafa; --destructive:#dc2626; --ring:#a3a3a3; --warn:#c2410c;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+  --bg:#0a0a0a; --fg:#fafafa; --muted:#262626; --muted-fg:#a1a1a1; --border:#2a2a2a; --input:#171717;
+  --sidebar:#171717; --primary:#e5e5e5; --primary-fg:#171717; --destructive:#f87171; --ring:#737373; --warn:#fb923c;
+}}
+:root[data-theme=dark]{
+  --bg:#0a0a0a; --fg:#fafafa; --muted:#262626; --muted-fg:#a1a1a1; --border:#2a2a2a; --input:#171717;
+  --sidebar:#171717; --primary:#e5e5e5; --primary-fg:#171717; --destructive:#f87171; --ring:#737373; --warn:#fb923c;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;background:var(--bg);color:var(--fg);font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0}
+button:disabled{opacity:.5;cursor:default}
+:focus-visible{outline:2px solid var(--ring);outline-offset:2px}
+.ic{display:inline-flex}.ic svg{width:1rem;height:1rem;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ibtn{display:inline-flex;align-items:center;justify-content:center;width:2rem;height:2rem;border-radius:.5rem;color:var(--muted-fg)}
+.ibtn:hover{background:var(--muted);color:var(--fg)}
+.btn{display:inline-flex;align-items:center;gap:.4rem;height:2.25rem;padding:0 .9rem;border-radius:.5rem;border:1px solid var(--border);background:var(--bg);font-size:.875rem;font-weight:500}
+.btn:hover{background:var(--muted)}
+.btn.primary{background:var(--primary);color:var(--primary-fg);border-color:var(--primary)}
+.btn.primary:hover{opacity:.9}
+
+/* sidebar */
+#side{width:18rem;flex:none;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:.75rem .5rem}
+body:not(.sb) #side{display:none}
+#side h1{font-size:1.125rem;font-weight:600;margin:0}
+.shead{display:flex;align-items:center;justify-content:space-between;margin:.1rem 0 0 .5rem}
+.tag{margin:0 .5rem .7rem;font-size:.75rem;color:var(--muted-fg);line-height:1.35}
+body.sb #menu{visibility:hidden}
+.navbtn{display:flex;align-items:center;gap:.6rem;width:100%;height:2.25rem;padding:0 .6rem;border-radius:.5rem;font-size:.875rem;text-align:left}
+.navbtn:hover{background:var(--muted)}
+#search{display:flex;align-items:center;gap:.6rem;height:2.25rem;padding:0 .6rem;border-radius:.5rem;color:var(--muted-fg)}
+#search:focus-within{background:var(--muted)}
+#search input{flex:1;min-width:0;border:0;background:none;outline:0;font-size:.875rem}
+#search input::placeholder{color:var(--fg);opacity:1}
+#side .lbl{font-size:.75rem;font-weight:500;color:var(--muted-fg);margin:1rem .6rem .35rem}
+#convs{flex:1;overflow:auto}
+.conv{display:flex;align-items:center;border-radius:.5rem;padding:0 .25rem 0 .6rem;height:2.25rem;cursor:pointer;font-size:.875rem}
+.conv:hover,.conv.on{background:var(--muted)}
+.conv span{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.conv .ibtn{width:1.75rem;height:1.75rem;opacity:0}
+.conv:hover .ibtn,.conv .ibtn:focus-visible{opacity:1}
+@media (hover:none){.conv .ibtn{opacity:1}}
+
+/* main */
+main{flex:1;min-width:0;display:flex;flex-direction:column;height:100%;position:relative}
+#top{position:absolute;top:.5rem;left:.5rem;right:.75rem;display:flex;justify-content:space-between;z-index:2;pointer-events:none}
+#top .ibtn{pointer-events:auto;background:var(--bg)}
+#top .ibtn:hover{background:var(--muted)}
+#banner{display:none;margin:3.25rem auto 0;width:min(48rem,calc(100% - 2rem));padding:.6rem .8rem;border:1px solid var(--destructive);color:var(--destructive);border-radius:.75rem;font-size:.875rem;gap:.6rem;align-items:flex-start}
+#banner.on{display:flex}
+#banner span{flex:1}
+#msgs{flex:1;overflow:auto;padding:3.5rem 1rem 1rem}
+#msgs>*{max-width:48rem;margin-left:auto;margin-right:auto}
+#hero{display:none;text-align:center;padding:0 1rem 1.5rem}
+#hero h2{font-size:1.875rem;font-weight:600;margin:0 0 .35rem;letter-spacing:-.01em}
+#hero p{margin:0;font-size:1.125rem;color:var(--muted-fg)}
+body.empty main{justify-content:center}
+body.empty #msgs{display:none}
+body.empty #hero{display:block}
+
+.msg{margin-bottom:1.5rem}
+.msg.user{display:flex;flex-direction:column;align-items:flex-end}
+.msg.user .body{background:var(--muted);border-radius:1.125rem;padding:.6rem 1rem;max-width:80%;white-space:pre-wrap}
+.msg.user .body p{margin:0}
+.body{overflow-wrap:anywhere}
+.body p{margin:.75em 0}.body>:first-child{margin-top:0}.body>:last-child{margin-bottom:0}
+.body ul,.body ol{margin:.75em 0;padding-left:1.5em}
+.body pre{background:var(--muted);border-radius:.75rem;padding:.75rem 1rem;overflow:auto;font-size:.85rem}
+.body code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.875em}
+.body :not(pre)>code{background:var(--muted);border-radius:.3rem;padding:.1em .35em}
+.body h3,.body h4,.body h5,.body h6{margin:1.1em 0 .4em;font-size:1.05rem;font-weight:600}
+.pinned{font-size:.75rem;color:var(--muted-fg);display:inline-flex;align-items:center;gap:.25rem;margin-bottom:.25rem}
+.card{border:1px solid var(--border);border-radius:.75rem;background:var(--input);margin-bottom:.75rem}
+.card>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;font-size:.875rem;color:var(--muted-fg)}
+.card>summary::-webkit-details-marker{display:none}
+.card>summary b{color:var(--fg);font-weight:500}
+.card>summary .chev{margin-left:auto;transition:transform .15s}
+.card[open]>summary .chev{transform:rotate(180deg)}
+.card .in{padding:.25rem .8rem .8rem;border-top:1px solid var(--border)}
+.reason pre{white-space:pre-wrap;font:inherit;font-size:.875rem;color:var(--muted-fg);margin:.5rem 0 0}
+.stats{font-size:.75rem;color:var(--muted-fg);margin-top:.5rem;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.acts{margin-top:.25rem;display:flex;flex-wrap:wrap;gap:.1rem;opacity:0;transition:opacity .15s}
+.msg:hover .acts,.msg:focus-within .acts,.acts.show{opacity:1}
+@media (hover:none){.acts{opacity:1}}
+.acts .ibtn{width:1.85rem;height:1.85rem}
+textarea.edit,.stash textarea,.field input,.field select,.field textarea{width:100%;border:1px solid var(--border);border-radius:.5rem;background:var(--input);padding:.5rem .7rem}
+textarea.edit{min-height:8rem}
+.stash{margin-bottom:1.5rem}
+.msg.user .recall{align-self:stretch;margin:.6rem 0 0}
+.doc{display:flex;align-items:center;gap:.6rem;padding:.3rem 0;font-size:.875rem}
+.doc span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc input{width:auto;flex:none}
+.doc small{margin:0;white-space:nowrap}
+.stash label{display:block;font-size:.75rem;font-weight:500;color:var(--muted-fg);margin:.7rem 0 .3rem}
+.stash textarea{min-height:5.5rem;margin-bottom:.4rem;font-size:.875rem}
+.orig{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.875rem;color:var(--muted-fg);border-left:2px solid var(--border);padding-left:.7rem;margin:.5rem 0}
+.orig i{display:block;font-style:normal;font-size:.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.stash .btn{margin-top:.5rem;height:2rem}
+
+/* chat form */
+#formwrap{padding:0 1rem 1rem}
+#form{max-width:48rem;margin:0 auto;border:1px solid var(--border);border-radius:1.5rem;background:var(--input);padding:.25rem}
+#form:focus-within{border-color:var(--ring)}
+#input{display:block;width:100%;resize:none;max-height:40vh;min-height:2.75rem;border:0;outline:0;background:none;padding:.75rem .9rem .25rem}
+#input::placeholder{color:var(--muted-fg)}
+#frow{display:flex;align-items:center;gap:.5rem;padding:.25rem .4rem .3rem}
+#compact{display:inline-flex;align-items:center;gap:.35rem;height:2rem;padding:0 .7rem;border-radius:1rem;font-size:.8rem;color:var(--muted-fg);border:1px solid var(--border)}
+#compact:hover:not(:disabled){background:var(--muted);color:var(--fg)}
+#meter{flex:1;min-width:0;display:flex;align-items:center;gap:.6rem;justify-content:flex-end;font-size:.75rem;color:var(--muted-fg);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#meter .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#meter .bar{position:relative;flex:0 1 7rem;min-width:2.5rem;height:4px;background:var(--border);border-radius:2px}
+#meter .fill{height:100%;width:0;background:var(--muted-fg);border-radius:2px;transition:width .2s}
+#meter .fill.hot{background:var(--warn)}
+#meter .tick{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--fg);opacity:.6}
+#send{display:inline-flex;align-items:center;justify-content:center;flex:none;width:2rem;height:2rem;border-radius:50%;background:var(--primary);color:var(--primary-fg)}
+#send:hover{opacity:.85}
+#hint{max-width:48rem;margin:.5rem auto 0;text-align:center;font-size:.75rem;color:var(--muted-fg);min-height:1.2em}
+kbd{font:inherit;background:var(--muted);border-radius:.25rem;padding:0 .3rem}
+
+/* settings */
+dialog{border:1px solid var(--border);border-radius:.9rem;background:var(--bg);color:var(--fg);width:min(54rem,96vw);height:min(42rem,92vh);padding:0}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+.dwrap{display:flex;flex-direction:column;height:100%}
+.dhead{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border)}
+.dhead h2{margin:0;font-size:1.125rem;font-weight:600}
+.dbody{flex:1;display:flex;min-height:0}
+#tabs{width:12rem;flex:none;border-right:1px solid var(--border);padding:.75rem .5rem;display:flex;flex-direction:column;gap:.15rem}
+#tabs button.on{background:var(--muted);font-weight:500}
+.pane{flex:1;overflow:auto;padding:1.25rem 1.5rem}
+.pane section{display:none}.pane section.on{display:block}
+.pane h3{margin:0 0 1rem;font-size:1.05rem;font-weight:600}
+.field{margin-bottom:1.1rem}
+.field>label{display:block;font-size:.875rem;font-weight:500;margin-bottom:.35rem}
+.field textarea{min-height:6rem;resize:vertical}
+.field small{display:block;color:var(--muted-fg);font-size:.75rem;margin-top:.3rem}
+.field.chk{display:flex;gap:.6rem;align-items:flex-start}
+.field.chk input{margin-top:.3rem;width:auto;flex:none}
+.field.chk label{margin:0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:0 1rem}
+.dfoot{display:flex;justify-content:space-between;gap:.5rem;padding:.9rem 1.25rem;border-top:1px solid var(--border)}
+
+@media (max-width:768px){
+  #side{position:fixed;inset:0 auto 0 0;z-index:5;width:min(18rem,85vw);box-shadow:0 0 40px rgba(0,0,0,.35)}
+  .dbody{flex-direction:column}
+  #tabs{width:auto;flex-direction:row;overflow:auto;border-right:0;border-bottom:1px solid var(--border)}
+  #tabs button{width:auto;white-space:nowrap}
+  .two{grid-template-columns:1fr}
+  .msg.user .body{max-width:92%}
+  #meter .bar{display:none}
+}
+</style>
+</head>
+<body class="empty">
+<aside id="side">
+  <div class="shead"><h1>Cria</h1><button class="ibtn" id="sideclose" title="Toggle sidebar" aria-label="Toggle sidebar"><span data-ic="panel"></span></button></div>
+  <p class="tag">Context and RAG management for llama.cpp</p>
+  <button class="navbtn" id="new"><span data-ic="newchat"></span>New chat</button>
+  <label id="search"><span data-ic="search"></span><input id="q" placeholder="Search conversations" aria-label="Search conversations"></label>
+  <div class="lbl">Conversations</div>
+  <div id="convs"></div>
+</aside>
+
+<main>
+  <div id="top">
+    <button class="ibtn" id="menu" title="Toggle sidebar" aria-label="Toggle sidebar"><span data-ic="panel"></span></button>
+    <button class="ibtn" id="settings" title="Settings" aria-label="Settings"><span data-ic="gear"></span></button>
+  </div>
+  <div id="banner"><span></span><button class="ibtn" id="bclose" aria-label="Dismiss"><span data-ic="x"></span></button></div>
+  <section id="msgs"></section>
+  <div id="hero"><h2>Cria</h2><p>Context and RAG management for llama.cpp</p></div>
+  <div id="formwrap">
+    <div id="form">
+      <textarea id="input" rows="1" placeholder="Ask anything..."></textarea>
+      <div id="frow">
+        <button id="compact" title="Compact every eligible middle turn now"><span data-ic="shrink"></span>Compact</button>
+        <div id="meter" title="Tokens in the prompt that will be sent, out of the model's context size. The mark shows where automatic compaction starts.">
+          <span class="txt"></span>
+          <div class="bar"><div class="fill"></div><div class="tick"></div></div>
+        </div>
+        <button id="send" title="Send" aria-label="Send"></button>
+      </div>
+    </div>
+    <div id="hint"></div>
+  </div>
+</main>
+
+<dialog id="dlg">
+  <div class="dwrap">
+    <div class="dhead"><h2>Settings</h2><button class="ibtn" id="dclose" aria-label="Close"><span data-ic="x"></span></button></div>
+    <div class="dbody">
+      <nav id="tabs">
+        <button class="navbtn" data-tab="general">General</button>
+        <button class="navbtn" data-tab="sampling">Sampling</button>
+        <button class="navbtn" data-tab="context">Context</button>
+        <button class="navbtn" data-tab="recall">Recall</button>
+        <button class="navbtn" data-tab="data">Import/Export</button>
+      </nav>
+      <div class="pane">
+        <section data-sec="general">
+          <h3>General</h3>
+          <div class="field"><label>Server address</label><input data-k="baseUrl" placeholder="http://localhost:8080"></div>
+          <div class="two">
+            <div class="field"><label>Model</label><input data-k="model" list="models"><datalist id="models"></datalist><small>Needed for llama-swap or router mode, optional otherwise.</small></div>
+            <div class="field"><label>API key</label><input data-k="apiKey" type="password" autocomplete="off"><small>Only if the server was started with one.</small></div>
+          </div>
+          <div class="field"><label>Theme</label><select data-k="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div>
+          <div class="field"><label>System message</label><textarea data-k="system" placeholder="What the story or chat is about, style, rules."></textarea><small>Always sent first and never compacted.</small></div>
+        </section>
+        <section data-sec="sampling">
+          <h3>Sampling</h3>
+          <div class="two">
+            <div class="field"><label>Temperature</label><input data-k="temperature" type="number" min="0" step="0.05"></div>
+            <div class="field"><label>Top K</label><input data-k="top_k" type="number" min="0" step="1"></div>
+            <div class="field"><label>Top P</label><input data-k="top_p" type="number" min="0" max="1" step="0.01"></div>
+            <div class="field"><label>Min P</label><input data-k="min_p" type="number" min="0" max="1" step="0.01"></div>
+            <div class="field"><label>Repeat penalty</label><input data-k="repeat_penalty" type="number" min="0" step="0.01"></div>
+            <div class="field"><label>Max tokens</label><input data-k="maxTokens" type="number" min="-1" step="1"><small>-1 means no limit.</small></div>
+          </div>
+          <p style="font-size:.8rem;color:var(--muted-fg)">Leave a field empty to use the server's default.</p>
+        </section>
+        <section data-sec="context">
+          <h3>Context</h3>
+          <div class="field chk"><input id="k1" data-k="ctxAuto" type="checkbox"><label for="k1">Read the context size from the server</label></div>
+          <div class="field"><label>Context size (tokens)</label><input data-k="ctxSize" type="number" min="512" step="1"></div>
+          <div class="field chk"><input id="k2" data-k="autoCompact" type="checkbox"><label for="k2">Compact automatically when the context fills</label></div>
+          <div class="two">
+            <div class="field"><label>Start compacting at (% full)</label><input data-k="thresholdPct" type="number" min="10" max="95" step="1"></div>
+            <div class="field"><label>Compact down to (% full)</label><input data-k="targetPct" type="number" min="5" max="90" step="1"></div>
+            <div class="field"><label>Opening turns never compacted</label><input data-k="keepFirst" type="number" min="0" step="1"></div>
+            <div class="field"><label>Recent turns never compacted</label><input data-k="keepLast" type="number" min="1" step="1"></div>
+            <div class="field"><label>Method</label><select data-k="mode"><option value="summarise">Summarise the reply, keep my message</option><option value="remove">Remove the whole turn</option></select></div>
+            <div class="field"><label>Where summaries go</label><select data-k="placement"><option value="thinking">As that turn's thinking</option><option value="inline">In place of the reply</option></select></div>
+          </div>
+          <div class="field" style="margin-top:-.6rem"><small id="thinkNote"></small></div>
+          <div class="field chk"><input id="k4" data-k="sendReasoning" type="checkbox"><label for="k4">Send thinking from earlier turns back to the model<small>Off by default: thinking is shown here but left out of the prompt. When on, compaction first drops thinking from the middle turns, then summarises replies only if that was not enough.</small></label></div>
+          <div class="field chk"><input id="k3" data-k="noteOmitted" type="checkbox"><label for="k3">Tell the model when whole turns were removed</label></div>
+          <div class="field"><label>Instruction used to write summaries</label><textarea data-k="summaryPrompt"></textarea></div>
+        </section>
+        <section data-sec="recall">
+          <h3>Recall</h3>
+          <div class="field chk"><input id="k5" data-k="recallOn" type="checkbox"><label for="k5">Search for relevant passages and send them with each message<small>The passages travel with your newest message only and are dropped again on the next turn, so they never pile up in the context.</small></label></div>
+          <div class="field chk"><input id="k6" data-k="recallChat" type="checkbox"><label for="k6">Search the text that compaction set aside in this conversation<small>Brings an original passage back for one turn when your message touches something that was summarised or removed.</small></label></div>
+          <div class="two">
+            <div class="field"><label>Passages per message</label><input data-k="recallK" type="number" min="1" max="20" step="1"></div>
+            <div class="field"><label>Token budget for passages</label><input data-k="recallTokens" type="number" min="100" step="50"></div>
+          </div>
+          <div class="field"><label>Passage size (characters)</label><input data-k="chunkChars" type="number" min="200" step="100"><small>Text is cut at paragraph breaks into passages of about this size. Keep it within what your embedding model accepts.</small></div>
+          <div class="field"><label>Document library</label>
+            <div id="doclist"></div>
+            <button class="btn" type="button" id="adddoc" style="margin-top:.5rem">Add text files</button><input id="docfile" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" multiple hidden>
+            <small>Plain text and Markdown, for example a story bible or the manuscript so far. Ticked documents are searched in every conversation. They stay in this browser.</small></div>
+          <div class="two">
+            <div class="field"><label>Embedding server address</label><input data-k="embUrl" placeholder="http://localhost:8081"><small>Optional. A llama-server started with an embedding model, or any server with /v1/embeddings. Leave empty for keyword search only.</small></div>
+            <div class="field"><label>Embedding model</label><input data-k="embModel"><small>Needed for llama-swap, optional otherwise.</small></div>
+          </div>
+          <div class="field"><button class="btn" type="button" id="embednow">Embed passages now</button><small id="embNote"></small></div>
+        </section>
+        <section data-sec="data">
+          <h3>Import/Export</h3>
+          <div class="field"><label>Everything</label>
+            <button class="btn" id="export">Export to a file</button> <button class="btn" id="import">Import from a file</button>
+            <input id="file" type="file" accept="application/json" hidden>
+            <small>Conversations with all set-aside text, settings, the recall library and its embedding vectors. Importing one of these replaces what is in this browser.</small></div>
+          <div class="field"><label>Recall library and index only</label>
+            <button class="btn" id="exportrag">Export library and index</button>
+            <small>The documents and their embedding vectors, without any conversations. Bring it back with Import from a file: it is merged into what is here, and nothing has to be embedded again as long as the embedding model name is the same.</small></div>
+          <div class="field"><label>Other files Import accepts</label><small style="margin-top:0">A conversation exported from llama.cpp's own web UI (one conversation or all of them) is added to the list without replacing anything.</small></div>
+          <div class="field"><small style="margin-top:0">All data is kept in this browser only. Clearing site data or browsing history removes it, so keep an export.</small></div>
+          <div class="field"><small style="margin-top:0">Cria is open source under the Apache License 2.0. It is an independent project, not affiliated with llama.cpp.</small></div>
+          <div class="field"><label>This conversation</label><button class="btn" id="restoreAll">Restore everything set aside</button></div>
+        </section>
+      </div>
+    </div>
+    <div class="dfoot"><button class="btn" id="reset">Reset to default</button><button class="btn primary" id="done">Done</button></div>
+  </div>
+</dialog>
+
+<script>
+'use strict';
+const KEY = 'compactchat.v1';
+const SAMPLING = ['temperature', 'top_k', 'top_p', 'min_p', 'repeat_penalty'];
+const NEEDED = ['ctxSize', 'thresholdPct', 'targetPct', 'keepFirst', 'keepLast', 'maxTokens', 'recallK', 'recallTokens', 'chunkChars'];
+const DEF = {
+  baseUrl: location.protocol.startsWith('http') ? location.origin : 'http://localhost:8080',
+  apiKey: '', model: '', system: '', theme: 'system',
+  temperature: 0.8, top_k: 40, top_p: 0.95, min_p: 0.05, repeat_penalty: '', maxTokens: -1,
+  ctxAuto: true, ctxSize: 8192,
+  autoCompact: true, thresholdPct: 75, targetPct: 50, keepFirst: 1, keepLast: 3,
+  recallOn: true, recallChat: true, recallK: 4, recallTokens: 1500, chunkChars: 1200, embUrl: '', embModel: '',
+  mode: 'summarise', placement: 'thinking', sendReasoning: false, noteOmitted: true,
+  summaryPrompt: 'You compress one reply from a long conversation or story so that the work can continue in less space. Summarise the REPLY as terse dot points. The REQUEST is given only so you understand the reply; do not summarise it. Keep every fact later text might depend on: names, events, decisions, places, objects, unresolved threads. Dot points only, no preamble and no commentary, at most 200 words.'
+};
+const ICONS = {
+  send: 'M12 19V5M5 12l7-7 7 7', stop: 'M7 7h10v10H7z',
+  gear: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
+  panel: 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 3v18',
+  newchat: 'M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z',
+  search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3',
+  copy: 'M8 8h12v12H8zM16 8V4H4v12h4', edit: 'M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z',
+  regen: 'M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5',
+  trash: 'M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+  archive: 'M2 3h20v5H2zM4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4',
+  list: 'M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01',
+  pin: 'M12 17v5M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z',
+  shrink: 'M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7', chev: 'M6 9l6 6 6-6',
+  undo: 'M3 7v6h6M21 17a9 9 0 0 0-15-6.7L3 13', x: 'M18 6L6 18M6 6l12 12'
+};
+
+let S = { settings: { ...DEF }, convs: [], currentId: null, ratio: 0.3 };
+let busy = null, ctl = new AbortController(), stopped = false, paintQ = null;
+let apiPrefix = null, exactOK = null, thinkOK = null, mTimer = null;
+const counts = new Map();
+let db = null, docs = [], saveT = null, dirty = false;
+const vecs = new Map(), chunkCache = new WeakMap();
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const mk = (role, content) => ({ id: uid(), role, content });
+const cur = () => S.convs.find(c => c.id === S.currentId);
+const isStashed = m => m.state === 'removed' || m.state === 'summarised';
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const base = () => S.settings.baseUrl.trim().replace(/\/+$/, '');
+const svg = n => '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + ICONS[n] + '"/></svg>';
+
+function h(tag, a = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(a)) {
+    if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c);
+  return e;
+}
+const icon = (n, cls) => h('span', { class: 'ic' + (cls ? ' ' + cls : ''), html: svg(n) });
+
+function adopt(j) {
+  S = j; S.settings = { ...DEF, ...j.settings }; S.ratio = S.ratio || 0.3;
+  if (!['thinking', 'inline'].includes(S.settings.placement)) S.settings.placement = 'thinking';
+  // Earlier versions summarised whole turns; now the user's message always stays and only the reply is summarised.
+  S.convs.forEach(c => c.messages.forEach((m, i) => {
+    if (m.role !== 'user' || m.state !== 'summarised') return;
+    m.state = 'active';
+    const a = c.messages[i + 1];
+    if (a && a.role === 'assistant' && m.summary && !a.summary) { a.summary = m.summary; a.sumLen = (a.content || '').length; }
+  }));
+  if (!S.convs.length) newConv();
+  if (!cur()) S.currentId = S.convs[0].id;
+}
+/* ---------- storage ---------- */
+// Everything lives in IndexedDB (conversations, the document library, embedding vectors), which
+// has far more room than localStorage. localStorage is only read once, to carry over older data,
+// and used as a fallback where IndexedDB is unavailable.
+function idbOpen() {
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open('compactchat', 1);
+      r.onupgradeneeded = () => { const d = r.result; d.createObjectStore('kv'); d.createObjectStore('docs', { keyPath: 'id' }); d.createObjectStore('vecs'); };
+      r.onsuccess = () => res(r.result); r.onerror = r.onblocked = () => res(null);
+    } catch (e) { res(null); }
+  });
+}
+const idb = (store, mode, fn) => new Promise((res, rej) => {
+  if (!db) return res(null);
+  const tx = db.transaction(store, mode), rq = fn(tx.objectStore(store));
+  tx.oncomplete = () => res(rq ? rq.result : null); tx.onerror = tx.onabort = () => rej(tx.error);
+});
+async function load() {
+  db = await idbOpen();
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});   // ask the browser not to evict this data
+  let j = null;
+  if (db) j = await idb('kv', 'readonly', s => s.get('state')).catch(() => null);
+  if (!j) try { j = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { /* start fresh */ }
+  if (j && Array.isArray(j.convs)) adopt(j);
+  if (!S.convs.length) newConv();
+  if (!cur()) S.currentId = S.convs[0].id;
+  if (S.sb == null || innerWidth <= 768) S.sb = innerWidth > 768;
+  if (db) {
+    docs = (await idb('docs', 'readonly', s => s.getAll()).catch(() => null)) || [];
+    await new Promise(res => {
+      const rq = db.transaction('vecs').objectStore('vecs').openCursor();
+      rq.onsuccess = () => { const c = rq.result; if (!c) return res(); vecs.set(c.key, c.value); c.continue(); };
+      rq.onerror = () => res();
+    });
+  }
+}
+function save() { dirty = true; clearTimeout(saveT); saveT = setTimeout(flush, 250); }
+function flush() {
+  if (!dirty) return;
+  dirty = false; clearTimeout(saveT);
+  const fail = e => banner('Could not save to browser storage (' + ((e && e.message) || e) + '). Use Settings, Import/Export to keep a copy.');
+  if (db) idb('kv', 'readwrite', s => s.put(S, 'state')).catch(fail);
+  else try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { fail(e); }
+}
+addEventListener('pagehide', flush);
+document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+function newConv() {
+  const c = { id: uid(), title: '', messages: [] };
+  S.convs.unshift(c); S.currentId = c.id; return c;
+}
+function banner(text) { $('#banner span').textContent = text; $('#banner').classList.add('on'); }
+function status(text) {
+  const el = $('#hint');
+  if (text) el.textContent = text; else el.innerHTML = 'Press <kbd>Enter</kbd> to send, <kbd>Shift + Enter</kbd> for new line';
+}
+function friendly(e) {
+  if (e instanceof TypeError) return 'Could not reach the server at ' + base() + '. Check the address in Settings, that the server is running, and that it accepts requests from this page.';
+  return e.message || String(e);
+}
+function applyTheme() {
+  const t = S.settings.theme;
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+}
+
+/* ---------- tiny markdown ---------- */
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function inline(t) {
+  return esc(t)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+}
+function blocks(t) {
+  return t.split(/\n{2,}/).map(b => {
+    b = b.replace(/^\n+|\n+$/g, '');
+    if (!b.trim()) return '';
+    const lines = b.split('\n');
+    if (lines.every(l => /^\s*[-*•]\s+/.test(l)))
+      return '<ul>' + lines.map(l => '<li>' + inline(l.replace(/^\s*[-*•]\s+/, '')) + '</li>').join('') + '</ul>';
+    if (lines.every(l => /^\s*\d+[.)]\s+/.test(l)))
+      return '<ol>' + lines.map(l => '<li>' + inline(l.replace(/^\s*\d+[.)]\s+/, '')) + '</li>').join('') + '</ol>';
+    const hd = /^(#{1,4})\s+(.*)$/.exec(b);
+    if (hd && lines.length === 1) { const n = hd[1].length + 2; return '<h' + n + '>' + inline(hd[2]) + '</h' + n + '>'; }
+    return '<p>' + lines.map(inline).join('<br>') + '</p>';
+  }).join('');
+}
+function md(src) {
+  let out = '';
+  (src || '').split('```').forEach((p, i) => {
+    if (i % 2) { const nl = p.indexOf('\n'); out += '<pre><code>' + esc((nl >= 0 ? p.slice(nl + 1) : p).replace(/\n$/, '')) + '</code></pre>'; }
+    else out += blocks(p);
+  });
+  return out;
+}
+
+/* ---------- context building ---------- */
+// A turn is a user message plus the replies that follow it. Compaction works on whole turns
+// so the user/assistant alternation that chat templates expect is preserved.
+function turns(conv) {
+  const t = [];
+  for (const m of conv.messages) { if (m.role === 'user' || !t.length) t.push([]); t[t.length - 1].push(m); }
+  return t;
+}
+
+// Where a summary goes: as the thinking of the turn it replaces, unless the model's chat
+// template is known to drop thinking from earlier turns, in which case it takes the reply's place.
+function placement() { return S.settings.placement === 'inline' || thinkOK === false ? 'inline' : 'thinking'; }
+
+function buildPrompt(conv) {
+  const s = S.settings, body = [], where = placement();
+  let removed = 0, lastU = null;
+  for (const m of conv.messages) {
+    if (m.state === 'removed') { removed++; continue; }
+    if (m.state === 'summarised') {
+      const sum = (m.summary || '').trim();
+      if (!sum) continue;
+      body.push(where === 'thinking' ? { role: 'assistant', content: '', reasoning_content: sum }
+                                     : { role: 'assistant', content: '[Summary of my earlier reply, shortened to save space]\n' + sum });
+      continue;
+    }
+    if (!m.content) continue;
+    const o = { role: m.role, content: m.content };
+    if (m.role === 'assistant' && s.sendReasoning && m.reasoning && !m.dropThink) o.reasoning_content = m.reasoning;
+    body.push(o);
+    if (m.role === 'user') lastU = [o, m];
+  }
+  // Recalled passages ride on the newest user message only, so everything before it stays
+  // byte-identical from turn to turn and the server's prompt cache keeps working.
+  if (lastU && s.recallOn && lastU[1].recall && lastU[1].recall.length) lastU[0].content = recallBlock(lastU[1].recall) + lastU[0].content;
+  let sys = (s.system || '').trim();
+  if (removed && s.noteOmitted) {
+    const nt = '[Context note, not part of the conversation: ' + removed + ' earlier message' + (removed > 1 ? 's' : '') + ' from the middle of this conversation ' + (removed > 1 ? 'were' : 'was') + ' set aside to save space.]';
+    sys = sys ? sys + '\n\n' + nt : nt;
+  }
+  return (sys ? [{ role: 'system', content: sys }] : []).concat(body);
+}
+
+/* ---------- server calls ---------- */
+function headers() {
+  const hd = { 'Content-Type': 'application/json' };
+  if (S.settings.apiKey) hd.Authorization = 'Bearer ' + S.settings.apiKey;
+  return hd;
+}
+
+// llama-server's own endpoints (/props, /apply-template, /tokenize). Behind llama-swap they
+// live under /upstream/<model>/, so both locations are tried and the working one remembered.
+async function srv(path, body) {
+  const m = S.settings.model.trim();
+  const tries = apiPrefix != null ? [apiPrefix] : [''].concat(m ? ['/upstream/' + encodeURIComponent(m)] : []);
+  for (const p of tries) {
+    try {
+      const r = await fetch(base() + p + path, body ? { method: 'POST', headers: headers(), body: JSON.stringify(body) } : { headers: headers() });
+      if (r.ok) { apiPrefix = p; return await r.json(); }
+    } catch (e) { /* try the next location */ }
+  }
+  apiPrefix = null;
+  return null;
+}
+
+// Exact count: the server renders the messages through the model's chat template and
+// tokenizes the result, so this is the number of prompt tokens it will actually process.
+// The character estimate is only a fallback for servers without these endpoints.
+const chars = ms => ms.reduce((n, m) => n + m.content.length + (m.reasoning_content || '').length + 12, 0);
+const est = ms => Math.ceil(chars(ms) * S.ratio);
+async function measure(conv) {
+  const msgs = buildPrompt(conv), key = JSON.stringify(msgs);
+  if (!msgs.length) return 0;
+  if (counts.has(key)) return counts.get(key);
+  if (exactOK !== false) {
+    const t = await srv('/apply-template', { messages: msgs });
+    const k = t && typeof t.prompt === 'string' ? await srv('/tokenize', { content: t.prompt, parse_special: true }) : null;
+    if (k && Array.isArray(k.tokens)) {
+      exactOK = true;
+      if (counts.size > 300) counts.clear();
+      counts.set(key, k.tokens.length);
+      S.ratio = clamp(k.tokens.length / chars(msgs), 0.08, 1.2);
+      return k.tokens.length;
+    }
+    if (exactOK === null) exactOK = false;
+  }
+  return est(msgs);
+}
+function usedNow(conv) {
+  const msgs = buildPrompt(conv), c = counts.get(JSON.stringify(msgs));
+  return c != null ? { n: c, exact: true } : { n: msgs.length ? est(msgs) : 0, exact: !msgs.length };
+}
+
+async function detectCtx(quiet) {
+  const j = await srv('/props');
+  const n = j && j.default_generation_settings && j.default_generation_settings.n_ctx;
+  if (n > 0) { S.settings.ctxSize = n; save(); bindSettings(); paintMeter(); return true; }
+  if (!quiet) banner('The server did not report a context size. Untick the option and enter the size you start the model with.');
+  return false;
+}
+// Many chat templates silently drop thinking from earlier assistant turns. Rather than guess,
+// ask the server to render a probe conversation and look for the marker in the result.
+async function checkThinking() {
+  if (thinkOK !== null) return;
+  const t = await srv('/apply-template', { messages: [{ role: 'user', content: 'a' }, { role: 'assistant', content: '', reasoning_content: 'ZQX7MARK' }, { role: 'user', content: 'b' }] });
+  if (t && typeof t.prompt === 'string') thinkOK = t.prompt.includes('ZQX7MARK');
+  else thinkOK = (await srv('/apply-template', { messages: [{ role: 'user', content: 'a' }] })) ? false : null;
+  paintThinkNote();
+}
+function paintThinkNote() {
+  const el = $('#thinkNote'); if (!el) return;
+  el.textContent = thinkOK === true ? "Checked with the server: this model's chat template keeps thinking from earlier turns, so summaries placed there reach the model."
+    : thinkOK === false ? "Checked with the server: this model's chat template drops thinking from earlier turns, so summaries are put in place of the reply instead."
+    : "Could not check with the server whether this model's chat template keeps thinking from earlier turns.";
+}
+function serverChanged() { apiPrefix = null; exactOK = null; thinkOK = null; counts.clear(); if (S.settings.ctxAuto) detectCtx(true); checkThinking().then(updateMeter); }
+
+async function chat(messages, opts, onDelta) {
+  const s = S.settings;
+  const body = { messages, stream: !!onDelta, cache_prompt: true };
+  if (opts.temperature != null) body.temperature = opts.temperature;
+  else for (const k of SAMPLING) { const v = s[k]; if (v !== '' && v != null && Number.isFinite(+v)) body[k] = +v; }
+  if (s.model.trim()) body.model = s.model.trim();
+  const mt = opts.maxTokens ?? s.maxTokens;
+  if (mt > 0) body.max_tokens = mt;
+  if (onDelta) { body.stream_options = { include_usage: true }; body.timings_per_token = true; }
+
+  const r = await fetch(base() + '/v1/chat/completions', { method: 'POST', headers: headers(), body: JSON.stringify(body), signal: ctl.signal });
+  if (!r.ok) {
+    let t = await r.text();
+    try { const j = JSON.parse(t); t = (j.error && (j.error.message || j.error)) || t; } catch (e) { /* plain text */ }
+    throw new Error('Server answered ' + r.status + ': ' + String(t).slice(0, 400));
+  }
+  if (!onDelta) {
+    const j = await r.json();
+    return { content: (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '', usage: j.usage };
+  }
+  const rd = r.body.getReader(), dec = new TextDecoder();
+  let buf = '', usage = null, timings = null;
+  for (;;) {
+    const { done, value } = await rd.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line.startsWith('data:')) continue;
+      const d = line.slice(5).trim();
+      if (d === '[DONE]') continue;
+      let j; try { j = JSON.parse(d); } catch (e) { continue; }
+      if (j.error) throw new Error(j.error.message || 'Server error');
+      if (j.usage) usage = j.usage;
+      if (j.timings) timings = j.timings;
+      const dl = j.choices && j.choices[0] && j.choices[0].delta;
+      if (dl) onDelta(dl.content || '', dl.reasoning_content || '');
+    }
+  }
+  return { usage, timings };
+}
+
+async function generate() {
+  const conv = cur(), sent = buildPrompt(conv), m = mk('assistant', '');
+  conv.messages.push(m);
+  setBusy('gen'); render(); scrollEnd();
+  try {
+    const res = await chat(sent, {}, (c, r) => { m.content += c; if (r) m.reasoning = (m.reasoning || '') + r; schedulePaint(m); });
+    const u = res.usage, t = res.timings;
+    const n = (t && t.predicted_n) || (u && u.completion_tokens);
+    if (n) m.stats = { n, tps: t && t.predicted_per_second, prompt: u && u.prompt_tokens };
+    if (u && u.prompt_tokens) {
+      counts.set(JSON.stringify(sent), u.prompt_tokens);          // the server's own figure for this prompt
+      if (exactOK !== true) S.ratio = clamp(u.prompt_tokens / chars(sent), 0.08, 1.2);
+    }
+    if (exactOK === false) exactOK = null;                         // server is reachable, try exact counting again
+  } catch (e) {
+    if (e.name !== 'AbortError') banner(friendly(e));
+  }
+  if (!m.content && !m.reasoning) conv.messages.splice(conv.messages.indexOf(m), 1);
+  setBusy(null); save(); render();
+}
+
+/* ---------- compaction ---------- */
+// Middle turns: everything between the protected opening and the protected recent turns, minus pinned ones.
+function middle(conv) {
+  const t = turns(conv), s = S.settings;
+  return t.slice(Math.max(0, s.keepFirst), Math.max(0, t.length - Math.max(1, s.keepLast))).filter(x => !x.some(m => m.pin));
+}
+const todo = (turn, mode) => mode === 'remove' ? turn.some(m => m.state !== 'removed')
+  : turn.some(m => m.role === 'assistant' && !isStashed(m) && m.content);
+
+const cleanSummary = t => (t || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
+// summarise: the user's message stays word for word, each reply in the turn is replaced by a summary.
+// remove: the whole turn leaves the context.
+async function stash(turn, mode) {
+  if (mode === 'remove') { turn.forEach(m => { m.state = 'removed'; }); return; }
+  const ask = turn.find(m => m.role === 'user');
+  for (const m of turn) {
+    if (m.role !== 'assistant' || isStashed(m) || !m.content) continue;
+    if (!(m.summary && m.sumLen === m.content.length)) {      // reuse a summary already written for this exact text
+      const text = (ask ? 'REQUEST (context only):\n' + ask.content.slice(0, 4000) + '\n\n' : '') + 'REPLY TO SUMMARISE:\n' + m.content;
+      const r = await chat([{ role: 'system', content: S.settings.summaryPrompt }, { role: 'user', content: text }], { temperature: 0.2, maxTokens: 1500 });
+      const out = cleanSummary(r.content);
+      if (!out) throw new Error('The model returned an empty summary.');
+      m.summary = out; m.sumLen = m.content.length;
+    }
+    m.state = 'summarised';
+  }
+}
+
+// auto: stop as soon as the context is back under the target. Manual: compact every eligible turn.
+// When earlier thinking is being sent, it is dropped from the middle turns first, which costs no model call.
+async function compact(auto, onlyTurn, mode) {
+  if (busy) return;
+  const conv = cur(), s = S.settings;
+  mode = mode || s.mode;
+  await checkThinking();
+  let dropped = 0;
+  if (!onlyTurn && s.sendReasoning) middle(conv).forEach(t => t.forEach(m => {
+    if (m.role === 'assistant' && m.reasoning && !m.dropThink && !isStashed(m)) { m.dropThink = true; dropped++; }
+  }));
+  const list = onlyTurn ? [onlyTurn] : middle(conv).filter(t => todo(t, mode));
+  if (!list.length) {
+    if (dropped) { save(); render(); }
+    else if (!auto) banner('Nothing to compact: every turn is pinned, already compacted, part of the protected opening, or among the recent turns. You can change those counts in Settings, Context.');
+    else if (await measure(conv) > s.ctxSize * 0.95) banner('The context is almost full and nothing is eligible for compaction. Lower the protected opening or recent turn counts in Settings, Context.');
+    return;
+  }
+  const goal = s.ctxSize * s.targetPct / 100;
+  let n = 0;
+  setBusy('compact'); render();
+  try {
+    for (const t of list) {
+      if (ctl.signal.aborted) break;
+      if (auto && await measure(conv) <= goal) break;
+      status((mode === 'remove' ? 'Setting aside turn ' : 'Summarising reply ') + (n + 1) + (auto ? '' : ' of ' + list.length) + '…');
+      await stash(t, mode);
+      n++; save(); render();
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') banner('Compaction stopped: ' + friendly(e));
+  }
+  setBusy(null); save(); render();
+}
+
+async function autoCompact() {
+  const s = S.settings;
+  if (!s.autoCompact || await measure(cur()) < s.ctxSize * s.thresholdPct / 100) return;
+  await compact(true);
+}
+
+function restore(msgs) {
+  // Restored turns are pinned so automatic compaction does not immediately take them again.
+  const ts = turns(cur());
+  msgs.forEach(m => { m.state = 'active'; (ts.find(t => t.includes(m)) || [m]).forEach(x => { x.pin = true; }); });
+  save(); render();
+}
+
+/* ---------- recall (retrieval) ---------- */
+// Sources: replies and turns that compaction set aside in this conversation, and the document
+// library. Text is cut into passages, ranked against the new message by keyword (BM25) and,
+// when an embedding server is configured, by meaning (cosine similarity); the two rankings are
+// merged by reciprocal rank fusion and the best few passages are sent with the message.
+function hash(t) { let a = 0xdeadbeef, b = 0x41c6ce57; for (let i = 0; i < t.length; i++) { const c = t.charCodeAt(i); a = Math.imul(a ^ c, 2654435761); b = Math.imul(b ^ c, 1597334677); } return ((b >>> 0).toString(36) + (a >>> 0).toString(36)); }
+
+function chunksOf(text, size) {
+  const out = []; let buf = '';
+  const push = () => { if (buf.trim()) out.push(buf.trim()); buf = ''; };
+  const add = (p, sep) => { if (buf && buf.length + p.length + sep.length > size) push(); buf += (buf ? sep : '') + p; };
+  for (const para of text.split(/\n\s*\n/)) {
+    const p = para.trim(); if (!p) continue;
+    if (p.length <= size) { add(p, '\n\n'); continue; }
+    push();
+    for (const sent of p.split(/(?<=[.!?…"”])\s+/)) {
+      if (sent.length <= size) add(sent, ' ');
+      else { push(); for (let i = 0; i < sent.length; i += size) out.push(sent.slice(i, i + size)); }
+    }
+    push();
+  }
+  push();
+  return out;
+}
+function chunksFor(obj, text, src) {
+  const size = Math.max(200, S.settings.chunkChars), key = size + ':' + text.length + ':' + src;
+  let c = chunkCache.get(obj);
+  if (!c || c.key !== key) { c = { key, list: chunksOf(text, size).map(t => ({ src, text: t })) }; chunkCache.set(obj, c); }
+  return c.list;
+}
+function allChunks(conv) {
+  const s = S.settings, out = [];
+  if (s.recallChat) turns(conv).forEach((t, i) => t.forEach(m => {
+    if (isStashed(m) && m.content) out.push(...chunksFor(m, m.content, 'Earlier in this conversation, turn ' + (i + 1) + (m.role === 'user' ? ', user' : ', reply')));
+  }));
+  docs.forEach(d => { if (d.on) out.push(...chunksFor(d, d.text, d.name)); });
+  return out;
+}
+
+const STOP = new Set('the a an and or of to in on at for with is are was were be been it its this that as by from but not he she they you we his her their my your had has have so if then than there what which who'.split(' '));
+const words = t => (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) || []).filter(w => w.length > 1 && !STOP.has(w));
+function bm25(chunks, query) {
+  let avg = 0;
+  for (const c of chunks) {
+    if (!c.tf) { c.tf = new Map(); const ws = words(c.text); ws.forEach(w => c.tf.set(w, (c.tf.get(w) || 0) + 1)); c.len = ws.length; }
+    avg += c.len;
+  }
+  avg = avg / chunks.length || 1;
+  const qs = [...new Set(words(query))], N = chunks.length;
+  const idf = new Map(qs.map(w => { let n = 0; for (const c of chunks) if (c.tf.has(w)) n++; return [w, Math.log(1 + (N - n + 0.5) / (n + 0.5))]; }));
+  return chunks.map(c => { let sc = 0; for (const w of qs) { const f = c.tf.get(w); if (f) sc += idf.get(w) * f * 2.2 / (f + 1.2 * (0.25 + 0.75 * c.len / avg)); } return sc; });
+}
+
+const embOn = () => !!S.settings.embUrl.trim();
+const vkey = t => S.settings.embModel.trim() + '|' + hash(t) + t.length;
+const dot = (a, b) => { if (!a || !b || a.length !== b.length) return 0; let x = 0; for (let i = 0; i < a.length; i++) x += a[i] * b[i]; return x; };
+async function embed(texts) {
+  const s = S.settings, body = { input: texts };
+  if (s.embModel.trim()) body.model = s.embModel.trim();
+  const r = await fetch(s.embUrl.trim().replace(/\/+$/, '') + '/v1/embeddings', { method: 'POST', headers: headers(), body: JSON.stringify(body), signal: ctl.signal });
+  if (!r.ok) throw new Error('it answered ' + r.status + ': ' + (await r.text()).slice(0, 200));
+  const j = await r.json();
+  if (!j.data || j.data.length !== texts.length) throw new Error('it returned no embeddings');
+  return j.data.slice().sort((a, b) => a.index - b.index).map(d => {
+    const v = Float32Array.from(d.embedding); let n = 0; for (const x of v) n += x * x; n = Math.sqrt(n) || 1;
+    for (let i = 0; i < v.length; i++) v[i] /= n; return v;
+  });
+}
+async function ensureVecs(chunks) {
+  const seen = new Set(), miss = chunks.filter(c => { const k = vkey(c.text); if (vecs.has(k) || seen.has(k)) return false; seen.add(k); return true; });
+  for (let i = 0; i < miss.length; i += 16) {
+    status('Embedding passages ' + (i + 1) + ' to ' + Math.min(i + 16, miss.length) + ' of ' + miss.length + '…');
+    const batch = miss.slice(i, i + 16), out = await embed(batch.map(c => c.text));
+    batch.forEach((c, k) => vecs.set(vkey(c.text), out[k]));
+    if (db) await idb('vecs', 'readwrite', st => { batch.forEach((c, k) => st.put(out[k], vkey(c.text))); }).catch(() => {});
+  }
+  return miss.length;
+}
+
+function recallBlock(list) {
+  return '[Reference passages, retrieved automatically for this message from earlier in this conversation or from reference documents. Use them for facts and continuity. They are not part of my message and not a style to imitate.]\n\n'
+    + list.map(r => '--- ' + r.src + ' ---\n' + r.text).join('\n\n') + '\n\n[End of reference passages]\n\n';
+}
+
+async function recall(conv, m) {
+  const s = S.settings, chunks = allChunks(conv);
+  conv.messages.forEach(x => { delete x.recall; delete x.recallHow; });
+  if (!chunks.length) return;
+  const ranks = (scores, keep) => { const r = new Map(); scores.map((v, i) => [v, i]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0]).slice(0, keep).forEach((x, k) => r.set(x[1], k)); return r; };
+  const rk = ranks(bm25(chunks, m.content), 1e9);
+  let rv = null;
+  if (embOn()) {
+    try {
+      await ensureVecs(chunks);
+      status('Searching earlier text…');
+      const [q] = await embed([m.content.slice(0, 2000)]);
+      rv = ranks(chunks.map(c => dot(q, vecs.get(vkey(c.text)))), Math.max(20, s.recallK * 5));
+    } catch (e) {
+      if (e.name === 'AbortError') throw e;
+      banner('Recall used keyword search only, because the embedding server could not be used (' + (e instanceof TypeError ? 'no answer from ' + s.embUrl.trim() : e.message) + ').');
+    }
+  }
+  const order = chunks.map((c, i) => [(rk.has(i) ? 1 / (60 + rk.get(i)) : 0) + (rv && rv.has(i) ? 1 / (60 + rv.get(i)) : 0), i]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0]);
+  const out = []; let budget = s.recallTokens;
+  for (const [, i] of order) {
+    if (out.length >= s.recallK) break;
+    const cost = Math.ceil(chunks[i].text.length * S.ratio);
+    if (cost > budget) continue;
+    budget -= cost; out.push({ src: chunks[i].src, text: chunks[i].text });
+  }
+  if (out.length) { m.recall = out; m.recallHow = rv ? 'keywords and embeddings' : 'keywords'; }
+}
+
+async function recallStep() {
+  const conv = cur(), m = conv.messages[conv.messages.length - 1];
+  if (!m || m.role !== 'user') return;
+  if (!S.settings.recallOn || !allChunks(conv).length) { conv.messages.forEach(x => { delete x.recall; delete x.recallHow; }); return; }
+  setBusy('recall'); status('Searching earlier text…');
+  try { await recall(conv, m); }
+  catch (e) { if (e.name !== 'AbortError') banner('Recall was skipped: ' + (e.message || e)); }
+  setBusy(null); save(); render();
+}
+
+/* ---------- document library ---------- */
+async function addDocs(files) {
+  for (const f of files) {
+    const text = (await f.text()).replace(/\r\n?/g, '\n');
+    if (!text.trim() || text.includes('\u0000')) { banner('"' + f.name + '" is not a plain text file, so it was not added. Text and Markdown files work.'); continue; }
+    const d = { id: uid(), name: f.name, on: true, text };
+    docs.push(d);
+    if (db) await idb('docs', 'readwrite', st => st.put(d)).catch(e => banner('Could not store "' + f.name + '": ' + ((e && e.message) || e)));
+  }
+  renderDocs();
+}
+async function replaceDocs(list) {
+  docs = list.filter(d => d && typeof d.text === 'string').map(d => ({ id: uid(), name: String(d.name || 'document'), on: d.on !== false, text: d.text }));
+  if (db) await idb('docs', 'readwrite', st => { st.clear(); docs.forEach(d => st.put(d)); }).catch(() => {});
+}
+function renderDocs() {
+  const box = $('#doclist'); box.innerHTML = '';
+  if (!docs.length) box.append(h('small', {}, 'No documents yet.'));
+  docs.forEach(d => {
+    const cb = h('input', { type: 'checkbox', 'aria-label': 'Search ' + d.name, onchange: () => { d.on = cb.checked; if (db) idb('docs', 'readwrite', st => st.put(d)).catch(() => {}); paintEmbNote(); } });
+    cb.checked = d.on;
+    box.append(h('div', { class: 'doc' }, cb, h('span', {}, d.name), h('small', {}, fmt(chunksFor(d, d.text, d.name).length) + ' passages'),
+      h('button', { class: 'ibtn', type: 'button', title: 'Remove', 'aria-label': 'Remove ' + d.name, html: '<span class="ic">' + svg('trash') + '</span>', onclick: () => {
+        if (!confirm('Remove "' + d.name + '" from the library?')) return;
+        docs.splice(docs.indexOf(d), 1); if (db) idb('docs', 'readwrite', st => st.delete(d.id)).catch(() => {}); renderDocs();
+      } })));
+  });
+  paintEmbNote();
+}
+function paintEmbNote() {
+  const all = allChunks(cur()), done = all.filter(c => vecs.has(vkey(c.text))).length;
+  $('#embNote').textContent = !embOn() ? 'No embedding server set, so recall matches on keywords only. ' + fmt(all.length) + ' passages are searchable for this conversation.'
+    : fmt(done) + ' of ' + fmt(all.length) + ' passages for this conversation are embedded.' + (done < all.length ? ' The rest are embedded the next time you send a message, or now with the button.' : '');
+}
+async function embedNow() {
+  if (busy) return;
+  if (!embOn()) return banner('Enter the embedding server address first.');
+  setBusy('recall');
+  try { const n = await ensureVecs(allChunks(cur())); status(''); paintEmbNote(); if (!n) paintEmbNote(); }
+  catch (e) { if (e.name !== 'AbortError') banner('Embedding failed: ' + (e instanceof TypeError ? 'no answer from ' + S.settings.embUrl.trim() + '. Check the address and that the server accepts requests from this page.' : e.message)); }
+  setBusy(null); paintEmbNote();
+}
+
+/* ---------- actions ---------- */
+async function run() {
+  stopped = false;
+  await autoCompact(); if (stopped) return;
+  await recallStep(); if (stopped) return;
+  await generate(); if (stopped) return;
+  await autoCompact();
+}
+
+async function send() {
+  if (busy) return;
+  const conv = cur(), inp = $('#input'), text = inp.value.trim();
+  if (text) {
+    conv.messages.push(mk('user', text));
+    if (!conv.title) conv.title = text.replace(/\s+/g, ' ').slice(0, 60);
+    inp.value = ''; autosize();
+  } else {
+    const last = conv.messages[conv.messages.length - 1];
+    if (!last || last.role !== 'user') return;
+  }
+  save(); render(); scrollEnd();
+  await run();
+}
+
+function setBusy(v) {
+  busy = v;
+  if (v) ctl = new AbortController(); else status('');
+  const b = $('#send');
+  b.innerHTML = '<span class="ic">' + svg(v ? 'stop' : 'send') + '</span>';
+  b.title = v ? 'Stop' : 'Send'; b.setAttribute('aria-label', b.title); b.dataset.busy = v ? '1' : '';
+  $('#compact').disabled = !!v;
+}
+
+/* ---------- rendering ---------- */
+function scrollEnd() { const b = $('#msgs'); b.scrollTop = b.scrollHeight; }
+function nearEnd() { const b = $('#msgs'); return b.scrollHeight - b.scrollTop - b.clientHeight < 90; }
+
+// Make o's children match n's while keeping the existing nodes wherever possible, and growing
+// text nodes in place. Streaming therefore never replaces text that is already on the page,
+// so a selection made while a reply is still arriving stays put and can be copied.
+function morph(o, n) {
+  let a = o.firstChild, b = n.firstChild;
+  while (b) {
+    const nb = b.nextSibling;
+    if (!a) o.appendChild(b);
+    else if (a.nodeType === 3 && b.nodeType === 3) {
+      if (a.data !== b.data) { if (b.data.startsWith(a.data)) a.appendData(b.data.slice(a.data.length)); else a.data = b.data; }
+      a = a.nextSibling;
+    }
+    else if (a.nodeType === 1 && b.nodeType === 1 && a.tagName === b.tagName) { morph(a, b); a = a.nextSibling; }
+    else { const na = a.nextSibling; o.replaceChild(b, a); a = na; }
+    b = nb;
+  }
+  while (a) { const na = a.nextSibling; o.removeChild(a); a = na; }
+}
+
+// A full redraw (for example when a reply finishes) rebuilds the message list. These two
+// remember a text selection as "which block, which character" and put it back afterwards.
+const SELBLOCKS = '.body,.reason pre,.orig';
+function saveSel() {
+  const sel = getSelection(), box = $('#msgs');
+  if (!sel || !sel.rangeCount || sel.isCollapsed || !box.contains(sel.anchorNode) || !box.contains(sel.focusNode)) return null;
+  const list = [...box.querySelectorAll(SELBLOCKS)];
+  const point = (node, off) => {
+    const el = (node.nodeType === 1 ? node : node.parentElement).closest(SELBLOCKS), i = list.indexOf(el);
+    if (i < 0) return null;
+    const r = document.createRange(); r.selectNodeContents(el); r.setEnd(node, off);
+    return { i, off: r.toString().length };
+  };
+  const a = point(sel.anchorNode, sel.anchorOffset), f = point(sel.focusNode, sel.focusOffset);
+  return a && f ? { a, f } : null;
+}
+function restoreSel(saved) {
+  if (!saved) return;
+  const list = [...$('#msgs').querySelectorAll(SELBLOCKS)];
+  const find = p => {
+    const el = list[p.i]; if (!el) return null;
+    const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let left = p.off, n, last = null;
+    while ((n = w.nextNode())) { if (left <= n.data.length) return [n, left]; left -= n.data.length; last = n; }
+    return last ? [last, last.data.length] : [el, 0];
+  };
+  const a = find(saved.a), f = find(saved.f);
+  if (a && f) try { getSelection().setBaseAndExtent(a[0], a[1], f[0], f[1]); } catch (e) { /* selection is a convenience */ }
+}
+
+function schedulePaint(m) {
+  if (paintQ) return;
+  paintQ = requestAnimationFrame(() => {
+    paintQ = null;
+    const el = document.querySelector('[data-id="' + m.id + '"]');
+    if (!el) return;
+    const stick = nearEnd();
+    const tmp = document.createElement('div'); tmp.innerHTML = md(m.content);
+    morph(el.querySelector('.body'), tmp);
+    if (m.reasoning) {
+      const r = el.querySelector('.reason'), pre = r.querySelector('pre'), t = pre.firstChild;
+      r.hidden = false;
+      if (t && t.nodeType === 3 && m.reasoning.startsWith(t.data)) t.appendData(m.reasoning.slice(t.data.length)); else pre.textContent = m.reasoning;
+    }
+    if (stick) scrollEnd();
+    paintMeter();
+  });
+}
+
+function paintMeter() {
+  const s = S.settings, u = usedNow(cur()), pct = Math.round(100 * u.n / Math.max(1, s.ctxSize));
+  const fill = $('#meter .fill');
+  fill.style.width = clamp(pct, 0, 100) + '%';
+  fill.classList.toggle('hot', pct >= s.thresholdPct);
+  $('#meter .tick').style.left = clamp(s.thresholdPct, 0, 100) + '%';
+  $('#meter .tick').style.display = s.autoCompact ? '' : 'none';
+  $('#meter .txt').textContent = (u.exact ? '' : '~') + fmt(u.n) + ' / ' + fmt(s.ctxSize) + ' tokens (' + pct + '%)';
+}
+function updateMeter() {
+  paintMeter();
+  if (busy === 'gen') return;
+  clearTimeout(mTimer);
+  mTimer = setTimeout(async () => {
+    const c = cur();
+    await measure(c);
+    if (cur() === c) paintMeter();
+  }, 120);
+}
+
+function act(ic, label, fn) { return h('button', { class: 'ibtn', type: 'button', title: label, 'aria-label': label, onclick: fn, html: '<span class="ic">' + svg(ic) + '</span>' }); }
+
+function msgEl(m, turn, conv) {
+  const firstLive = turn.find(x => !isStashed(x)) === m;
+  const isLast = conv.messages[conv.messages.length - 1] === m;
+  const el = h('div', { class: 'msg ' + m.role, 'data-id': m.id });
+  if (m.pin && firstLive) el.append(h('div', { class: 'pinned' }, icon('pin'), 'Pinned, never compacted'));
+  if (m.role === 'assistant') {
+    const r = h('details', { class: 'card reason' }, h('summary', {}, h('b', {}, 'Reasoning'), (S.settings.sendReasoning && !m.dropThink) ? 'sent back to the model' : 'not sent back to the model', icon('chev', 'chev')), h('div', { class: 'in' }, h('pre', {}, m.reasoning || '')));
+    r.hidden = !m.reasoning; el.append(r);
+  }
+  const body = h('div', { class: 'body', html: md(m.content) });
+  el.append(body);
+  if (m.role === 'user' && m.recall && m.recall.length)
+    el.append(h('details', { class: 'card recall' },
+      h('summary', {}, icon('search'), h('b', {}, 'Recalled ' + m.recall.length + ' passage' + (m.recall.length > 1 ? 's' : '')), 'sent with this message · matched on ' + (m.recallHow || 'keywords'), icon('chev', 'chev')),
+      h('div', { class: 'in' }, m.recall.map(r => h('div', { class: 'orig' }, h('i', {}, r.src), r.text)))));
+  if (m.role === 'assistant' && m.stats && !busy)
+    el.append(h('div', { class: 'stats' }, fmt(m.stats.n) + ' tokens' + (m.stats.tps ? ' · ' + m.stats.tps.toFixed(1) + ' t/s' : '') + (m.stats.prompt ? ' · prompt ' + fmt(m.stats.prompt) : '')));
+  if (busy) return el;
+
+  const acts = h('div', { class: 'acts' },
+    act('copy', 'Copy', () => navigator.clipboard && navigator.clipboard.writeText(m.content)),
+    act('edit', 'Edit', () => {
+      const ta = h('textarea', { class: 'edit' }); ta.value = m.content;
+      const bar = h('div', { class: 'acts show', style: 'gap:.4rem;margin-top:.5rem' },
+        h('button', { class: 'btn primary', type: 'button', onclick: () => { m.content = ta.value; save(); render(); } }, 'Save'),
+        h('button', { class: 'btn', type: 'button', onclick: render }, 'Cancel'));
+      body.replaceWith(ta); acts.replaceWith(bar); el.style.alignItems = 'stretch'; ta.focus();
+    }),
+    (isLast && m.role === 'assistant') ? act('regen', 'Regenerate', () => { conv.messages.pop(); save(); render(); run(); }) : null,
+    act('trash', 'Delete', () => { if (confirm('Delete this message for good?')) { conv.messages.splice(conv.messages.indexOf(m), 1); save(); render(); } }),
+    (m.role === 'assistant' && m.content) ? act('list', 'Summarise this reply (your message stays)', () => compact(false, turn, 'summarise')) : null,
+    firstLive ? act('archive', 'Set this whole turn aside (remove from context)', () => compact(false, turn, 'remove')) : null,
+    firstLive ? act('pin', m.pin ? 'Unpin this turn' : 'Pin this turn so it is never compacted', () => { const p = !m.pin; turn.forEach(x => { x.pin = p; }); save(); render(); }) : null
+  );
+  el.append(acts);
+  return el;
+}
+
+function stashCard(msgs) {
+  const summarised = msgs.some(m => m.state === 'summarised');
+  const holders = msgs.filter(m => m.state === 'summarised' && m.summary != null);
+  const saved = Math.ceil(msgs.reduce((n, m) => n + m.content.length + 12, 0) * S.ratio);
+  const inner = h('div', { class: 'in' });
+  const d = h('details', { class: 'card stash' },
+    h('summary', {}, icon(summarised ? 'list' : 'archive'), h('b', {}, summarised ? 'Reply summarised' : 'Removed from context'),
+      msgs.length + ' message' + (msgs.length > 1 ? 's' : '') + ' · about ' + fmt(saved) + ' tokens set aside', icon('chev', 'chev')), inner);
+  if (holders.length) inner.append(h('label', {}, 'Summary the model sees ' + (placement() === 'thinking' ? "as this turn's thinking" : 'in place of the reply') + ' (you can edit it)'));
+  holders.forEach(holder => {
+    const ta = h('textarea', { onchange: () => { holder.summary = ta.value; save(); updateMeter(); } });
+    ta.value = holder.summary;
+    inner.append(ta);
+  });
+  inner.append(h('label', {}, 'Original text, kept here and not sent'));
+  msgs.forEach(m => inner.append(h('div', { class: 'orig' }, h('i', {}, m.role === 'user' ? 'You' : 'Assistant'), m.content)));
+  if (!busy) inner.append(h('button', { class: 'btn', type: 'button', onclick: () => restore(msgs) }, icon('undo'), 'Restore to context'));
+  return d;
+}
+
+function renderSide() {
+  const box = $('#convs'), q = $('#q').value.trim().toLowerCase(); box.innerHTML = '';
+  S.convs.filter(c => !q || (c.title || 'New chat').toLowerCase().includes(q)).forEach(c => box.append(h('div', { class: 'conv' + (c.id === S.currentId ? ' on' : ''), onclick: () => {
+      if (busy) return; S.currentId = c.id; if (innerWidth <= 768) S.sb = false; save(); render(); scrollEnd(); } },
+    h('span', {}, c.title || 'New chat'),
+    h('button', { class: 'ibtn', title: 'Delete', 'aria-label': 'Delete conversation', html: '<span class="ic">' + svg('trash') + '</span>', onclick: ev => {
+      ev.stopPropagation();
+      if (busy || !confirm('Delete this conversation, including everything set aside?')) return;
+      S.convs.splice(S.convs.indexOf(c), 1);
+      if (!S.convs.length) newConv();
+      if (!cur()) S.currentId = S.convs[0].id;
+      save(); render();
+    } }))));
+}
+
+function render() {
+  renderSide();
+  document.body.classList.toggle('sb', !!S.sb);
+  const conv = cur(), box = $('#msgs'), stick = nearEnd(), sel = saveSel();
+  document.body.classList.toggle('empty', !conv.messages.length);
+  box.innerHTML = '';
+  const turnOf = new Map();
+  turns(conv).forEach(t => t.forEach(m => turnOf.set(m, t)));
+  let grp = [];
+  const flush = () => { if (grp.length) { box.append(stashCard(grp)); grp = []; } };
+  for (const m of conv.messages) {
+    if (isStashed(m)) { if (grp.length && grp[0].state !== m.state) flush(); grp.push(m); continue; }
+    flush(); box.append(msgEl(m, turnOf.get(m), conv));
+  }
+  flush();
+  restoreSel(sel);
+  updateMeter();
+  if (stick) scrollEnd();
+}
+
+/* ---------- settings ---------- */
+function bindSettings() {
+  document.querySelectorAll('[data-k]').forEach(el => {
+    const k = el.dataset.k;
+    if (el.type === 'checkbox') el.checked = !!S.settings[k]; else el.value = S.settings[k];
+    if (k === 'ctxSize') el.disabled = !!S.settings.ctxAuto;
+    el.onchange = () => {
+      let v = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? '' : Number(el.value)) : el.value;
+      if (el.type === 'number' && (v === '' || !Number.isFinite(v))) v = NEEDED.includes(k) ? DEF[k] : '';
+      S.settings[k] = v;
+      const s = S.settings;
+      s.thresholdPct = clamp(s.thresholdPct, 10, 95);
+      if (s.targetPct >= s.thresholdPct) s.targetPct = Math.max(5, s.thresholdPct - 10);
+      s.keepLast = Math.max(1, Math.round(s.keepLast)); s.keepFirst = Math.max(0, Math.round(s.keepFirst));
+      s.ctxSize = Math.max(512, Math.round(s.ctxSize));
+      s.recallK = clamp(Math.round(s.recallK), 1, 20); s.recallTokens = Math.max(100, Math.round(s.recallTokens)); s.chunkChars = Math.max(200, Math.round(s.chunkChars));
+      if ($('#doclist')) renderDocs();
+      save(); applyTheme();
+      if (k === 'baseUrl' || k === 'model' || k === 'apiKey') serverChanged();
+      if (k === 'ctxAuto') { if (v) detectCtx(false); bindSettings(); }
+      updateMeter();
+    };
+  });
+}
+function showTab(t) {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  document.querySelectorAll('.pane section').forEach(x => x.classList.toggle('on', x.dataset.sec === t));
+}
+async function fetchModels() {
+  try {
+    const r = await fetch(base() + '/v1/models', { headers: headers() });
+    const j = await r.json(), dl = $('#models'); dl.innerHTML = '';
+    (j.data || []).forEach(m => dl.append(h('option', { value: m.id })));
+  } catch (e) { /* the list is a convenience only */ }
+}
+
+/* ---------- llama.cpp import ---------- */
+// Accepts a single exported conversation, an "export all" array, or a bare list of
+// {role, content} messages. llama.cpp stores messages as a tree (edits and regenerations
+// create branches); the branch ending at currNode is the one that was on screen.
+function fromLlama(j) {
+  const items = Array.isArray(j) ? (j.length && j[0] && j[0].role && !j[0].messages ? [{ messages: j }] : j) : [j];
+  const text = c => typeof c === 'string' ? c : Array.isArray(c) ? c.map(p => typeof p === 'string' ? p : (p && p.text) || '').join('') : '';
+  const out = [];
+  for (const it of items) {
+    if (!it || typeof it !== 'object') continue;
+    const meta = it.conv || it, ms = Array.isArray(it.messages) ? it.messages : meta.messages;
+    if (!Array.isArray(ms)) continue;
+    const byId = new Map(ms.filter(m => m && m.id != null).map(m => [m.id, m]));
+    let chain = null;
+    if (meta.currNode != null && byId.has(meta.currNode)) {
+      chain = []; const seen = new Set();
+      for (let m = byId.get(meta.currNode); m && !seen.has(m.id); m = m.parent != null ? byId.get(m.parent) : null) { seen.add(m.id); chain.unshift(m); }
+    }
+    if (!chain) chain = ms.every(m => m && typeof m.timestamp === 'number') ? ms.slice().sort((a, b) => a.timestamp - b.timestamp) : ms;
+    const msgs = [];
+    for (const m of chain) {
+      if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;   // skips the tree root and system entries
+      let content = text(m.content), reasoning = text(m.thinking || m.reasoning_content || m.reasoningContent);
+      if (m.role === 'assistant') content = content.replace(/<think>([\s\S]*?)(<\/think>|$)/g, (_, r) => { reasoning += r; return ''; }).trim();
+      if (!content && !reasoning) continue;
+      const x = mk(m.role, content);
+      if (reasoning.trim()) x.reasoning = reasoning.trim();
+      msgs.push(x);
+    }
+    if (!msgs.length) continue;
+    const first = msgs.find(m => m.role === 'user') || msgs[0];
+    out.push({ id: uid(), title: String(meta.name || meta.title || first.content).replace(/\s+/g, ' ').slice(0, 60), messages: msgs });
+  }
+  return out;
+}
+
+/* ---------- wiring ---------- */
+function autosize() { const t = $('#input'); t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, innerHeight * 0.4) + 'px'; }
+
+document.querySelectorAll('[data-ic]').forEach(e => { e.className = 'ic'; e.innerHTML = svg(e.dataset.ic); });
+$('#send').onclick = () => { if (busy) { stopped = true; ctl.abort(); } else send(); };
+$('#input').addEventListener('input', autosize);
+$('#input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+$('#compact').onclick = () => compact(false);
+$('#q').addEventListener('input', renderSide);
+$('#settings').onclick = () => { bindSettings(); fetchModels(); paintThinkNote(); renderDocs(); showTab('general'); $('#dlg').showModal(); };
+document.querySelectorAll('#tabs button').forEach(b => { b.onclick = () => showTab(b.dataset.tab); });
+$('#done').onclick = $('#dclose').onclick = () => $('#dlg').close();
+$('#dlg').addEventListener('close', () => { bindSettings(); render(); });
+$('#reset').onclick = () => {
+  if (!confirm('Reset every setting to its default? Conversations are kept.')) return;
+  S.settings = { ...DEF }; save(); applyTheme(); bindSettings(); serverChanged(); updateMeter();
+};
+$('#restoreAll').onclick = () => { cur().messages.forEach(m => { if (isStashed(m)) m.state = 'active'; delete m.dropThink; }); save(); render(); $('#dlg').close(); };
+$('main').addEventListener('click', () => { if (S.sb && innerWidth <= 768) { S.sb = false; save(); render(); } });
+$('#bclose').onclick = () => $('#banner').classList.remove('on');
+$('#menu').onclick = $('#sideclose').onclick = e => { e.stopPropagation(); S.sb = !S.sb; save(); render(); };
+$('#new').onclick = () => { if (busy) return; if (cur().messages.length) newConv(); if (innerWidth <= 768) S.sb = false; save(); render(); $('#input').focus(); };
+$('#adddoc').onclick = () => $('#docfile').click();
+$('#docfile').onchange = async e => { await addDocs([...e.target.files]); e.target.value = ''; };
+$('#embednow').onclick = embedNow;
+const b64 = v => { const u = new Uint8Array(v.buffer, v.byteOffset, v.byteLength); let t = ''; for (let i = 0; i < u.length; i += 0x8000) t += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(t); };
+const unb64 = t => { const b = atob(t), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new Float32Array(u.buffer); };
+const packLibrary = () => docs.map(d => ({ name: d.name, on: d.on, text: d.text }));
+const packVecs = () => Object.fromEntries([...vecs].map(([k, v]) => [k, b64(v)]));
+function download(obj, name) {
+  const a = h('a', { href: URL.createObjectURL(new Blob([JSON.stringify(obj)], { type: 'application/json' })), download: name });
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+async function addVecs(obj) {
+  if (!obj || typeof obj !== 'object') return 0;
+  const keys = [];
+  for (const [k, v] of Object.entries(obj)) try { vecs.set(k, unb64(v)); keys.push(k); } catch (e) { /* skip a damaged entry */ }
+  if (db) await idb('vecs', 'readwrite', st => { keys.forEach(k => st.put(vecs.get(k), k)); }).catch(() => {});
+  return keys.length;
+}
+async function mergeDocs(list) {
+  const fresh = (Array.isArray(list) ? list : []).filter(d => d && typeof d.text === 'string' && !docs.some(x => x.name === d.name && x.text === d.text))
+    .map(d => ({ id: uid(), name: String(d.name || 'document'), on: d.on !== false, text: d.text }));
+  docs.push(...fresh);
+  if (db && fresh.length) await idb('docs', 'readwrite', st => { fresh.forEach(d => st.put(d)); }).catch(() => {});
+  return fresh.length;
+}
+$('#export').onclick = () => { flush(); download({ ...S, library: packLibrary(), vectors: packVecs() }, 'cria-export.json'); };
+$('#exportrag').onclick = () => download({ recallExport: 1, library: packLibrary(), vectors: packVecs() }, 'cria-recall.json');
+$('#import').onclick = () => $('#file').click();
+$('#file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    if (j && j.recallExport) {                                   // recall library and index only: merged in
+      const nd = await mergeDocs(j.library), nv = await addVecs(j.vectors);
+      renderDocs(); status('Imported ' + nd + ' new document' + (nd === 1 ? '' : 's') + ' and ' + fmt(nv) + ' embedding vectors.');
+    } else if (j && Array.isArray(j.convs) && j.settings) {      // this page's own export
+      if (!confirm('This is a full export from this page. Replace everything stored in this browser with it?')) return;
+      const lib = j.library, vx = j.vectors; delete j.library; delete j.vectors;
+      adopt(j); if (Array.isArray(lib)) await replaceDocs(lib); await addVecs(vx);
+      save(); applyTheme(); bindSettings(); serverChanged(); renderDocs(); render();
+    } else {                                                     // a llama.cpp export: added alongside what is here
+      const got = fromLlama(j);
+      if (!got.length) throw new Error('no conversations found in that file');
+      S.convs.unshift(...got); S.currentId = got[0].id;
+      save(); render(); scrollEnd(); $('#dlg').close();
+    }
+  } catch (err) { banner('Import failed: ' + err.message); }
+  e.target.value = '';
+};
+
+setBusy(null);
+(async () => {
+  await load(); applyTheme(); bindSettings(); render(); scrollEnd();
+  if (S.settings.ctxAuto) detectCtx(true);
+  checkThinking().then(updateMeter);
+})();
+</script>
+</body>
+</html>
