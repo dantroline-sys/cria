@@ -12,4 +12,10 @@ All the data is stored in the browser cache, so if you clear that, it's gone.
 You can export and import the chats and the RAG in case you want to save 
 your best productions. 
 
+Current issues that will be addressed in next update:
+- storage is not encrypted, it’s just in the browser cache
+- not multi-tab aware
+- some keyboard navigation is buggy
+- doesn’t handle branched conversations well
+
 No frills, see if you like it.
